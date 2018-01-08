@@ -16,12 +16,23 @@ use \PDOException;
  * @warning the date attribute is a DateTime object
  */
 function get($id) {
-    return (object) array(
-        "id" => 1337,
-        "text" => "Text",
-        "date" => new \DateTime('2011-01-01T15:03:01'),
-        "author" => \Model\User\get(2)
-    );
+    if($id == null)
+        return null;
+
+    $db = \Db::dbc();
+    $query = 'SELECT * FROM TWEET WHERE TWEETID = '.$id;
+    $result = $db->query($query);
+
+    if($result != FALSE && $result->rowCount() > 0) {
+        $result = $result->fetchAll()[0];
+        return (object) array(
+            "id" => $result["TWEETID"],
+            "text" => $result["TWEETCONTENT"],
+            "date" => $result["TWEETPUBLICATIONDATE"],
+            "author" => \Model\User\get($result["USERID"]),
+        );
+    }
+    return NULL;
 }
 
 /**
@@ -35,17 +46,25 @@ function get($id) {
  * @warning the responds_to attribute is either null (if the post is not a response) or a post object
  */
 function get_with_joins($id) {
-    return (object) array(
-        "id" => 1337,
-        "text" => "Ima writing a post !",
-        "date" => new \DateTime('2011-01-01T15:03:01'),
-        "author" => \Model\User\get(2),
-        "likes" => [],
-        "hashtags" => [],
-        "responds_to" => null
-    );
+    $db = \Db::dbc();
+    $query = 'SELECT * FROM TWEET WHERE TWEETID = '.$id;
+    $result = $db->query($query);
+
+    if($result != FALSE && $result->rowCount() > 0) {
+        $result = $result->fetchAll()[0];
+        return (object) array(
+            "id" => $result["TWEETID"],
+            "text" => $result["TWEETCONTENT"],
+            "date" => $result["TWEETPUBLICATIONDATE"],
+            "author" => \Model\User\get($result["USERID"]),
+            "likes" => get_likes($result["TWEETID"]),
+            "hashtags" => \Model\Hashtag\list_post_hashtags($result["TWEETID"]),
+            "responds_to" => get($result["TWEETISRESPONSETO"])
+        );
+    }
+    return FALSE;
 }
- 
+
 /**
  * Create a post in db
  * @param author_id the author user's id
@@ -58,8 +77,64 @@ function get_with_joins($id) {
  * @warning this function adds the hashtags
  * @warning this function takes care to rollback if one of the queries comes to fail.
  */
-function create($author_id, $text, $response_to=null) {
-    return 1337;
+function create($author_id, $text, $response_to = null) {
+
+    // A FAIRE : Ajouter les mentions
+    $db = \Db::dbc();
+    date_default_timezone_set("Europe/Paris");
+    if($response_to == null)
+        $response_to = "null";
+    $query = "INSERT INTO TWEET VALUES(NULL,".$author_id.",'".date("Y-m-d G:i:s")."',".$response_to.",'".$text."')";
+    $result = $db->query($query);
+    if($result != FALSE) {
+        $post_id = $db->lastInsertId();
+
+        // Adding the mentions
+        $mentioned_authors = \Model\Post\extract_mentions($text);
+        if($mentioned_authors != null) {
+            foreach($mentioned_authors as $mentioned_author) {
+                $user = \Model\User\get_by_username($mentioned_author);
+                // Test the existence of the user
+                if($user != null) {
+
+                    // Test if the user is already mentionned in this post
+                    $users_mentioned = get_mentioned($post_id);
+                    $already_mentioned = false;
+                    foreach($users_mentioned as $user_mentioned) {
+                        if($user_mentioned == $user) {
+                            $already_mentioned = true;
+                            $j = 9999;
+                        }
+                    }
+                    if(!$already_mentioned);
+                        mention_user($post_id, $user->id);
+                }
+            }
+        }
+
+        // Adding the HASHTAGS
+        $hashtags = \Model\Post\extract_hashtags($text);
+        $hashtags_count = count($hashtags);
+        $hashtags_added = array();
+        $already_added = false;
+        foreach($hashtags as $hashtag) {
+            // Test if the hashtag is already linked to this post
+            foreach($hashtags_added as $hashtag_added) {
+                if($hashtag_added == $hashtag)
+                    $already_added = true;
+            }
+
+            // Adding it
+            if(!$already_added) {
+                \Model\Hashtag\attach($post_id, $hashtag);
+                $hashtags_added[] = $hashtag;
+                $already_added = false;
+            }
+        }
+
+        return $post_id;
+    }
+    return NULL;
 }
 
 /**
@@ -68,6 +143,11 @@ function create($author_id, $text, $response_to=null) {
  * @param uid the user id to mention
  */
 function mention_user($pid, $uid) {
+    $db = \Db::dbc();
+    $query = "INSERT INTO _MENTION VALUES(".$uid.",".$pid.",null)";
+    $result = $db->query($query);
+    if($result == FALSE)
+        echo "Echec de l'opération MENTION pour utilisateur ".$uid." et post ".$pid." \n";
 }
 
 /**
@@ -76,7 +156,17 @@ function mention_user($pid, $uid) {
  * @return the array of user objects mentioned
  */
 function get_mentioned($pid) {
-    return [];
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT DISTINCT USERID FROM _MENTION WHERE TWEETID = ".$pid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = \Model\User\get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -84,6 +174,12 @@ function get_mentioned($pid) {
  * @param id the id of the post to delete
  */
 function destroy($id) {
+    $db = \Db::dbc();
+    $query = "DELETE FROM TWEET WHERE TWEETID = ".$id;
+    $result = $db->query($query);
+    if($result != FALSE)
+        return TRUE;
+    return FALSE;
 }
 
 /**
@@ -92,7 +188,17 @@ function destroy($id) {
  * @return an array of find objects
  */
 function search($string) {
-    return [];
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT DISTINCT TWEETID FROM TWEET WHERE (TWEETCONTENT LIKE '%".$string."%')";
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -101,7 +207,19 @@ function search($string) {
  * @return an array of the objects of each post
  */
 function list_all($date_sorted=false) {
-    return [];
+    $list = array();
+    $db = \Db::dbc();
+    if($date_sorted == false)
+        $date_sorted = "";
+    $query = "SELECT TWEETID FROM TWEET ORDER BY TWEETPUBLICATIONDATE ".$date_sorted;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -111,7 +229,19 @@ function list_all($date_sorted=false) {
  * @return the list of posts objects
  */
 function list_user_posts($id, $date_sorted="DESC") {
-    return [];
+    $list = array();
+    $db = \Db::dbc();
+    if($date_sorted == false)
+        $date_sorted = "";
+    $query = "SELECT TWEETID FROM TWEET WHERE USERID = ".$id." ORDER BY TWEETPUBLICATIONDATE ".$date_sorted;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -120,7 +250,17 @@ function list_user_posts($id, $date_sorted="DESC") {
  * @return the users objects who liked the post
  */
 function get_likes($pid) {
-    return [];
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT DISTINCT USERID FROM _LIKE WHERE TWEETID = ".$pid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = \Model\User\get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -129,17 +269,46 @@ function get_likes($pid) {
  * @return the posts objects which are a response to the actual post
  */
 function get_responses($pid) {
-    return [];
+    $list = array();
+    $rowcount;
+    $id = $pid;
+    $db = \Db::dbc();
+    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = ".$id;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $response)
+            $list[] = get($response[0]);
+    }
+    return $list;
 }
 
 /**
  * Get stats from a post (number of responses and number of likes
  */
 function get_stats($pid) {
+    $db = \Db::dbc();
+    $query = "SELECT COUNT(USERID) FROM _LIKE WHERE TWEETID = ".$pid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $nb_likes = $result[0][0];
+
+    $post_id = $pid;
+    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = ".$post_id;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $nb_responses = count($result);
+
     return (object) array(
-        "nb_likes" => 10,
-        "nb_responses" => 40
+        "nb_likes" => $nb_likes,
+        "nb_responses" => $nb_responses
     );
+
+    /*return (object) array(
+        "nb_likes" => 123,
+        "nb_responses" => 123
+    );*/
 }
 
 /**
@@ -148,6 +317,12 @@ function get_stats($pid) {
  * @param pid the post's id to be liked
  */
 function like($uid, $pid) {
+    $db = \Db::dbc();
+    date_default_timezone_set("Europe/Paris");
+    $query = "INSERT INTO _LIKE VALUES(".$uid.",".$pid.",'".date("Y-m-d G:i:s")."',null)";
+    $result = $db->query($query);
+    if($result == FALSE)
+        echo "Echec de l'opération LIKE pour utilisateur ".$uid." et post ".$pid." \n";
 }
 
 /**
@@ -156,5 +331,9 @@ function like($uid, $pid) {
  * @param pid the post's id to be unliked
  */
 function unlike($uid, $pid) {
+    $db = \Db::dbc();
+    $query = "DELETE FROM _LIKE WHERE TWEETID = ".$pid." AND USERID = '".$uid."'";
+    $result = $db->query($query);
+    if($result == FALSE)
+        echo "Echec de l'opération UNLIKE pour utilisateur ".$uid." et post ".$pid." \n";
 }
-

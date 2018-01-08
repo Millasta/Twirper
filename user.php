@@ -41,16 +41,15 @@ function get($id) {
  * @param avatar_path the temporary path to the user's avatar
  * @return the id which was assigned to the created user, null if an error occured
  * @warning this function doesn't check whether a user with a similar username exists
- * @warning this function hashes the password
+ * @warning this function hashes the passhttps://www.google.fr/word
  */
 function create($username, $name, $password, $email, $avatar_path) {
     $db = \Db::dbc();
-    $query = 'INSERT INTO USER VALUES(NULL,"'.$username.'","'.$name.'","'.date("Y-m-d").'","'.$email.'","'.hash_password($password).'","'.$avatar_path.'")';
+    date_default_timezone_set("Europe/Paris");
+    $query = 'INSERT INTO USER VALUES(NULL,"'.$username.'","'.$name.'","'.date("Y-m-d G:i:s").'","'.$email.'","'.hash_password($password).'","'.$avatar_path.'")';
     $result = $db->query($query);
-    if($result != FALSE) {
-        echo "\nID added : ".$db->lastInsertId().", user : ".$username."\n";
+    if($result != FALSE)
         return $db->lastInsertId();
-    }
     return NULL;
 }
 
@@ -68,8 +67,6 @@ function modify($uid, $username, $name, $email) {
     $result = $db->query($query);
     if($result == FALSE)
         echo "Modify query failed.";
-    else
-        echo "\nUser ".$uid." modified.\n";
 }
 
 /**
@@ -108,10 +105,8 @@ function destroy($id) {
     $db = \Db::dbc();
     $query = "DELETE FROM USER WHERE USERID = ".$id;
     $result = $db->query($query);
-    if($result != FALSE){
-        echo "\nUser ".$id." deleted.\n";
+    if($result != FALSE)
         return TRUE;
-    }
     return FALSE;
 }
 
@@ -135,12 +130,11 @@ function search($string) {
     $db = \Db::dbc();
     $query = "SELECT DISTINCT USERID FROM USER WHERE (USERUSERNAME LIKE '%".$string."%') OR (USERDISPLAYNAME LIKE '%".$string."')";
     $result = $db->query($query);
-
     $result = $result->fetchAll();
     $rowCount = count($result);
     if($result != FALSE && $rowCount > 0) {
-        for($i = 0 ; $i < $rowCount ; $i++)
-            $list[] = get($result[$i][0]);
+        foreach($result as $i)
+            $list[] = get($i[0]);
     }
     return $list;
 }
@@ -152,13 +146,13 @@ function search($string) {
 function list_all() {
     $list = array();
     $db = \Db::dbc();
-    $query = "SELECT USERID FROM USER";
+    $query = "SELECT DISTINCT USERID FROM USER";
     $result = $db->query($query);
     $result = $result->fetchAll();
     $rowCount = count($result);
     if($result != FALSE && $rowCount > 0) {
-        for($i = 0 ; $i < $rowCount ; $i++)
-            $list[] = get($result[$i][0]);
+        foreach($result as $i)
+            $list[] = get($i[0]);
     }
     return $list;
 }
@@ -185,7 +179,17 @@ function get_by_username($username) {
  * @return a list of users objects
  */
 function get_followers($uid) {
-    return [get(2)];
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT DISTINCT USERID_1 FROM _FOLLOW WHERE USERID_2 = ".$uid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -194,7 +198,17 @@ function get_followers($uid) {
  * @return a list of users objects
  */
 function get_followings($uid) {
-    return [get(2)];
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT DISTINCT USERID_2 FROM _FOLLOW WHERE USERID_1 = ".$uid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $rowCount = count($result);
+    if($result != FALSE && $rowCount > 0) {
+        foreach($result as $i)
+            $list[] = get($i[0]);
+    }
+    return $list;
 }
 
 /**
@@ -203,10 +217,27 @@ function get_followings($uid) {
  * @return an object which describes the stats
  */
 function get_stats($uid) {
+    $list = array();
+    $db = \Db::dbc();
+    $query = "SELECT COUNT(USERID) FROM TWEET WHERE USERID = ".$uid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $nb_posts = $result[0][0];
+
+    $query = "SELECT COUNT(USERID_2) FROM _FOLLOW WHERE USERID_1 = ".$uid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $nb_followers = $result[0][0];
+
+    $query = "SELECT COUNT(USERID_1) FROM _FOLLOW WHERE USERID_2 = ".$uid;
+    $result = $db->query($query);
+    $result = $result->fetchAll();
+    $nb_following = $result[0][0];
+
     return (object) array(
-        "nb_posts" => 10,
-        "nb_followers" => 50,
-        "nb_following" => 66
+        "nb_posts" => $nb_posts,
+        "nb_followers" => $nb_followers,
+        "nb_following" => $nb_following
     );
 }
 
@@ -254,6 +285,12 @@ function check_auth_id($id, $password) {
  * @param id_to_follow the user's id to follow
  */
 function follow($id, $id_to_follow) {
+    $db = \Db::dbc();
+    date_default_timezone_set("Europe/Paris");
+    $query = "INSERT INTO _FOLLOW VALUES(".$id.",".$id_to_follow.",'".date("Y-m-d G:i:s")."',null)";
+    $result = $db->query($query);
+    if($result == FALSE)
+        echo "Echec de l'action ".$id." follow ".$id_to_follow."\n";
 }
 
 /**
@@ -262,4 +299,10 @@ function follow($id, $id_to_follow) {
  * @param id_to_follow the user's id to unfollow
  */
 function unfollow($id, $id_to_unfollow) {
+    $db = \Db::dbc();
+    $query = "DELETE FROM _FOLLOW WHERE USERID_1 = ".$id." AND USERID_2 = ".$id_to_unfollow;
+    $result = $db->query($query);
+    if($result != FALSE)
+        return TRUE;
+    return FALSE;
 }
