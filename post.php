@@ -20,17 +20,25 @@ function get($id) {
         return null;
 
     $db = \Db::dbc();
-    $query = 'SELECT * FROM TWEET WHERE TWEETID = '.$id;
-    $result = $db->query($query);
-
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        return (object) array(
-            "id" => $result["TWEETID"],
-            "text" => $result["TWEETCONTENT"],
-            "date" => $result["TWEETPUBLICATIONDATE"],
-            "author" => \Model\User\get($result["USERID"]),
-        );
+    $query = "SELECT * FROM TWEET WHERE TWEETID = :ID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":ID" => $id
+        ));
+        $result = $req;
+        if($result->rowCount() > 0) {
+            $result = $result->fetchAll()[0];
+            return (object) array(
+                "id" => $result["TWEETID"],
+                "text" => $result["TWEETCONTENT"],
+                "date" => $result["TWEETPUBLICATIONDATE"],
+                "author" => \Model\User\get($result["USERID"]),
+            );
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
     }
     return NULL;
 }
@@ -47,20 +55,29 @@ function get($id) {
  */
 function get_with_joins($id) {
     $db = \Db::dbc();
-    $query = 'SELECT * FROM TWEET WHERE TWEETID = '.$id;
-    $result = $db->query($query);
+    $query = "SELECT * FROM TWEET WHERE TWEETID = :ID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":ID" => $id
+        ));
+        $result = $req;
 
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        return (object) array(
-            "id" => $result["TWEETID"],
-            "text" => $result["TWEETCONTENT"],
-            "date" => $result["TWEETPUBLICATIONDATE"],
-            "author" => \Model\User\get($result["USERID"]),
-            "likes" => get_likes($result["TWEETID"]),
-            "hashtags" => \Model\Hashtag\list_post_hashtags($result["TWEETID"]),
-            "responds_to" => get($result["TWEETISRESPONSETO"])
-        );
+        if($result != FALSE && $result->rowCount() > 0) {
+            $result = $result->fetchAll()[0];
+            return (object) array(
+                "id" => $result["TWEETID"],
+                "text" => $result["TWEETCONTENT"],
+                "date" => $result["TWEETPUBLICATIONDATE"],
+                "author" => \Model\User\get($result["USERID"]),
+                "likes" => get_likes($result["TWEETID"]),
+                "hashtags" => \Model\Hashtag\list_post_hashtags($result["TWEETID"]),
+                "responds_to" => get($result["TWEETISRESPONSETO"])
+            );
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
     }
     return FALSE;
 }
@@ -82,11 +99,17 @@ function create($author_id, $text, $response_to = null) {
     // A FAIRE : Ajouter les mentions
     $db = \Db::dbc();
     date_default_timezone_set("Europe/Paris");
-    if($response_to == null)
-        $response_to = "null";
-    $query = "INSERT INTO TWEET VALUES(NULL,".$author_id.",'".date("Y-m-d G:i:s")."',".$response_to.",'".$text."')";
-    $result = $db->query($query);
-    if($result != FALSE) {
+    $date = date("Y-m-d G:i:s");
+    $query = "INSERT INTO TWEET VALUES(NULL,:AUTHOR_ID,:DATE,:RESPONSE_TO,:TEXT)";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":AUTHOR_ID" => $author_id,
+            ":DATE" => $date,
+            ":RESPONSE_TO" => $response_to,
+            ":TEXT" => $text
+        ));
+
         $post_id = $db->lastInsertId();
 
         // Adding the mentions
@@ -134,6 +157,9 @@ function create($author_id, $text, $response_to = null) {
 
         return $post_id;
     }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+    }
     return NULL;
 }
 
@@ -144,10 +170,17 @@ function create($author_id, $text, $response_to = null) {
  */
 function mention_user($pid, $uid) {
     $db = \Db::dbc();
-    $query = "INSERT INTO _MENTION VALUES(".$uid.",".$pid.",null)";
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec de l'opération MENTION pour utilisateur ".$uid." et post ".$pid." \n";
+    $query = "INSERT INTO _MENTION VALUES(:UID,:PID,null)";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":UID" => $uid,
+            ":PID" => $pid,
+        ));
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+    }
 }
 
 /**
@@ -158,13 +191,22 @@ function mention_user($pid, $uid) {
 function get_mentioned($pid) {
     $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT USERID FROM _MENTION WHERE TWEETID = ".$pid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = \Model\User\get($i[0]);
+    $query = "SELECT DISTINCT USERID FROM _MENTION WHERE TWEETID = :ID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":ID" => $pid
+        ));
+        $result = $req;
+        $result = $result->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $i)
+                $list[] = \Model\User\get($i[0]);
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
     }
     return $list;
 }
@@ -175,11 +217,18 @@ function get_mentioned($pid) {
  */
 function destroy($id) {
     $db = \Db::dbc();
-    $query = "DELETE FROM TWEET WHERE TWEETID = ".$id;
-    $result = $db->query($query);
-    if($result != FALSE)
-        return TRUE;
-    return FALSE;
+    $query = "DELETE FROM TWEET WHERE TWEETID = :ID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":ID" => $id
+        ));
+        return true;
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
+    }
 }
 
 /**
@@ -190,14 +239,26 @@ function destroy($id) {
 function search($string) {
     $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT TWEETID FROM TWEET WHERE (TWEETCONTENT LIKE '%".$string."%')";
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
+    $query = "SELECT DISTINCT TWEETID FROM TWEET WHERE (TWEETCONTENT LIKE :STRING)";
+    try {
+        $req = $db->prepare($query);
+        $string = "%".$string."%";
+        $req->execute(array(
+            ":STRING" => $string
+        ));
+        $result = $req;
+        $result = $result->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $i)
+                $list[] = get($i[0]);
+        }
     }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
+    }
+
     return $list;
 }
 
@@ -210,14 +271,21 @@ function list_all($date_sorted=false) {
     $list = array();
     $db = \Db::dbc();
     if($date_sorted == false)
-        $date_sorted = "";
+        $date_sorted = null;
     $query = "SELECT TWEETID FROM TWEET ORDER BY TWEETPUBLICATIONDATE ".$date_sorted;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
+    try {
+        $req = $db->prepare($query);
+        $req->execute();
+        $result = $req->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $i)
+                $list[] = get($i[0]);
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
     }
     return $list;
 }
@@ -233,13 +301,22 @@ function list_user_posts($id, $date_sorted="DESC") {
     $db = \Db::dbc();
     if($date_sorted == false)
         $date_sorted = "";
-    $query = "SELECT TWEETID FROM TWEET WHERE USERID = ".$id." ORDER BY TWEETPUBLICATIONDATE ".$date_sorted;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
+    $query = "SELECT TWEETID FROM TWEET WHERE USERID = :ID ORDER BY TWEETPUBLICATIONDATE ".$date_sorted;
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":ID" => $id
+        ));
+        $result = $req->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $i)
+                $list[] = get($i[0]);
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
     }
     return $list;
 }
@@ -252,13 +329,22 @@ function list_user_posts($id, $date_sorted="DESC") {
 function get_likes($pid) {
     $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT USERID FROM _LIKE WHERE TWEETID = ".$pid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = \Model\User\get($i[0]);
+    $query = "SELECT DISTINCT USERID FROM _LIKE WHERE TWEETID = :PID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":PID" => $pid
+        ));
+        $result = $req->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $i)
+                $list[] = \Model\User\get($i[0]);
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
     }
     return $list;
 }
@@ -271,15 +357,23 @@ function get_likes($pid) {
 function get_responses($pid) {
     $list = array();
     $rowcount;
-    $id = $pid;
     $db = \Db::dbc();
-    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = ".$id;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $response)
-            $list[] = get($response[0]);
+    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = :PID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":PID" => $pid
+        ));
+        $result = $req->fetchAll();
+        $rowCount = count($result);
+        if($result != FALSE && $rowCount > 0) {
+            foreach($result as $response)
+                $list[] = get($response[0]);
+        }
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
     }
     return $list;
 }
@@ -289,26 +383,38 @@ function get_responses($pid) {
  */
 function get_stats($pid) {
     $db = \Db::dbc();
-    $query = "SELECT COUNT(USERID) FROM _LIKE WHERE TWEETID = ".$pid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $nb_likes = $result[0][0];
+    $query = "SELECT COUNT(USERID) FROM _LIKE WHERE TWEETID = :PID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":PID" => $pid
+        ));
+        $result = $req->fetchAll();
+        $nb_likes = $result[0][0];
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
+    }
 
-    $post_id = $pid;
-    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = ".$post_id;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $nb_responses = count($result);
+    $query = "SELECT TWEETID FROM TWEET WHERE TWEETISRESPONSETO = :PID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":PID" => $pid
+        ));
+        $result = $req->fetchAll();
+        $nb_responses = count($result);
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+        return false;
+    }
 
     return (object) array(
         "nb_likes" => $nb_likes,
         "nb_responses" => $nb_responses
     );
-
-    /*return (object) array(
-        "nb_likes" => 123,
-        "nb_responses" => 123
-    );*/
 }
 
 /**
@@ -319,10 +425,18 @@ function get_stats($pid) {
 function like($uid, $pid) {
     $db = \Db::dbc();
     date_default_timezone_set("Europe/Paris");
-    $query = "INSERT INTO _LIKE VALUES(".$uid.",".$pid.",'".date("Y-m-d G:i:s")."',null)";
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec de l'opération LIKE pour utilisateur ".$uid." et post ".$pid." \n";
+    $query = "INSERT INTO _LIKE VALUES(:UID,:PID,:DATE,null)";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":UID" => $uid,
+            ":PID" => $pid,
+            ":DATE" => date("Y-m-d G:i:s")
+        ));
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+    }
 }
 
 /**
@@ -332,8 +446,15 @@ function like($uid, $pid) {
  */
 function unlike($uid, $pid) {
     $db = \Db::dbc();
-    $query = "DELETE FROM _LIKE WHERE TWEETID = ".$pid." AND USERID = '".$uid."'";
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec de l'opération UNLIKE pour utilisateur ".$uid." et post ".$pid." \n";
+    $query = "DELETE FROM _LIKE WHERE TWEETID = :PID AND USERID = :UID";
+    try {
+        $req = $db->prepare($query);
+        $req->execute(array(
+            ":UID" => $uid,
+            ":PID" => $pid,
+        ));
+    }
+    catch (PDOException $e) {
+        printf($e->getMessage());
+    }
 }
