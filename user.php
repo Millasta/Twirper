@@ -15,21 +15,29 @@ use \PDOException;
  */
 function get($id) {
     $db = \Db::dbc();
-    $query = 'SELECT * FROM USER WHERE USERID = '.$id;
-    $result = $db->query($query);
+    $query = "SELECT * FROM USER WHERE USERID = " . $id;
+    
+	try {
+	$req = $db->query($query);
 
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        return (object) array(
-            "id" => $result["USERID"],
-            "username" => $result["USERUSERNAME"],
-            "name" => $result["USERDISPLAYNAME"],
-            "password" => $result["USERPASSWORD"],
-            "email" => $result["USEREMAILADDRESS"],
-            "avatar" => $result["USERAVATAR"]
-        );
+		if ($req->rowCount() > 0) {
+		    $user = $req->fetchAll()[0];
+
+		    return (object) array(
+		        "id" => $user["USERID"],
+		        "username" => $user["USERUSERNAME"],
+		        "name" => $user["USERDISPLAYNAME"],
+		        "password" => $user["USERPASSWORD"],
+		        "email" => $user["USEREMAILADDRESS"],
+		        "avatar" => $user["USERAVATAR"]
+		    );
+		}
     }
-    return NULL;
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+    return null;
 }
 
 /**
@@ -45,12 +53,26 @@ function get($id) {
  */
 function create($username, $name, $password, $email, $avatar_path) {
     $db = \Db::dbc();
-    date_default_timezone_set("Europe/Paris");
-    $query = 'INSERT INTO USER VALUES(NULL,"'.$username.'","'.$name.'","'.date("Y-m-d G:i:s").'","'.$email.'","'.hash_password($password).'","'.$avatar_path.'")';
-    $result = $db->query($query);
-    if($result != FALSE)
-        return $db->lastInsertId();
-    return NULL;
+    $query = "INSERT INTO USER VALUES(:USERID, :USERUSERNAME, :USERDISPLAYNAME, :USERSUBSCRIBINGDATE, :USEREMAILADDRESS, :USERPASSWORD, :USERAVATAR)";
+
+	try {
+		date_default_timezone_set("Europe/Paris");
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERID" => null,
+			"USERUSERNAME" => $username,
+			"USERDISPLAYNAME" => $name,
+			"USERSUBSCRIBINGDATE" => date("Y-m-d G:i:s"),
+			"USEREMAILADDRESS" => $email,
+			"USERPASSWORD" => hash_password($password),
+			"USERAVATAR" => $avatar_path
+		));
+		return $db->lastInsertId();
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+		return null;
+	}
 }
 
 /**
@@ -63,10 +85,19 @@ function create($username, $name, $password, $email, $avatar_path) {
  */
 function modify($uid, $username, $name, $email) {
     $db = \Db::dbc();
-    $query = "UPDATE USER SET USERUSERNAME = '".$username."', USERDISPLAYNAME = '".$name."', USEREMAILADDRESS = '".$email."' WHERE USERID = ".$uid;
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Modify query failed.";
+    $query = "UPDATE USER SET USERUSERNAME = :USERUSERNAME, USERDISPLAYNAME = :USERDISPLAYNAME, USEREMAILADDRESS = :USEREMAILADDRESS WHERE USERID = " . $uid;
+	
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERUSERNAME" => $username,
+			"USERDISPLAYNAME" => $name,
+			"USEREMAILADDRESS" => $email
+		));
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
 }
 
 /**
@@ -77,10 +108,17 @@ function modify($uid, $username, $name, $email) {
  */
 function change_password($uid, $new_password) {
     $db = \Db::dbc();
-    $query = "UPDATE USER SET USERPASSWORD = '".hash_password($new_password)."' WHERE USERID = ".$uid;
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec du changemet de password pour ID ".$uid;
+    $query = "UPDATE USER SET USERPASSWORD = :USERPASSWORD WHERE USERID = " . $uid;
+	
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERPASSWORD" => hash_password($new_password)
+		));
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
 }
 
 /**
@@ -90,10 +128,17 @@ function change_password($uid, $new_password) {
  */
 function change_avatar($uid, $avatar_path) {
     $db = \Db::dbc();
-    $query = "UPDATE USER SET USERAVATAR = '".$avatar_path."' WHERE USERID = ".$uid;
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec du changemet d'avatar pour ID ".$uid;
+	$query = "UPDATE USER SET USERAVATAR = :USERAVATAR WHERE USERID = " . $uid;
+	
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERAVATAR" => $avatar_path
+		));
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
 }
 
 /**
@@ -102,12 +147,17 @@ function change_avatar($uid, $avatar_path) {
  * @return true if the user has been correctly deleted, false else
  */
 function destroy($id) {
-    $db = \Db::dbc();
-    $query = "DELETE FROM USER WHERE USERID = ".$id;
-    $result = $db->query($query);
-    if($result != FALSE)
-        return TRUE;
-    return FALSE;
+    $db = \Db::dbc(); 
+	$query = "DELETE FROM USER WHERE USERID = " . $id;
+
+	try {
+		$req = $db->exec($query);
+		return true;
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+		return false;
+	}
 }
 
 /**
@@ -116,8 +166,7 @@ function destroy($id) {
  * @return the hashed password
  */
 function hash_password($password) {
-    $password = hash("md5", $password, FALSE);
-    return $password;
+    return hash("md5", $password, false);
 }
 
 /**
@@ -126,17 +175,27 @@ function hash_password($password) {
  * @return an array of find objects
  */
 function search($string) {
-    $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT USERID FROM USER WHERE (USERUSERNAME LIKE '%".$string."%') OR (USERDISPLAYNAME LIKE '%".$string."')";
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
-    }
-    return $list;
+    $users = array();
+    $query = "SELECT DISTINCT USERID FROM USER WHERE (USERUSERNAME LIKE :SEARCH) OR (USERDISPLAYNAME LIKE :SEARCH)";
+
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"SEARCH" => "%" . $string . "%"
+		));
+
+		$data = $req->fetchAll();
+
+        foreach ($data as $userID) {
+            $users[] = get($userID[0]);
+		}
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return $users;
 }
 
 /**
@@ -144,17 +203,23 @@ function search($string) {
  * @return an array of the objects of every users
  */
 function list_all() {
-    $list = array();
     $db = \Db::dbc();
+    $users = array();
     $query = "SELECT DISTINCT USERID FROM USER";
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
-    }
-    return $list;
+    
+	try {
+		$req = $db->query($query);
+		$data = $req->fetchAll();
+
+		foreach($data as $user) {
+		    $users[] = get($user[0]);
+		}
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+    return $users;
 }
 
 /**
@@ -164,13 +229,22 @@ function list_all() {
  */
 function get_by_username($username) {
     $db = \Db::dbc();
-    $query = "SELECT USERID FROM USER WHERE USERUSERNAME = '".$username."'";
-    $result = $db->query($query);
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        return get($result["USERID"]);
-    }
-    return null;
+    $query = "SELECT USERID FROM USER WHERE USERUSERNAME = '" . $username . "'";
+
+	try {
+		$req = $db->query($query);
+
+		if ($req->rowCount() > 0) {
+			$user = $req->fetchAll()[0];
+
+			return get($user["USERID"]); 
+		}
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return null;
 }
 
 /**
@@ -179,17 +253,26 @@ function get_by_username($username) {
  * @return a list of users objects
  */
 function get_followers($uid) {
-    $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT USERID_1 FROM _FOLLOW WHERE USERID_2 = ".$uid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
-    }
-    return $list;
+    $users = array();
+    $query = "SELECT DISTINCT USERID_1 AS USERID FROM _FOLLOW WHERE USERID_2 = " . $uid;
+    
+	try {
+		$req = $db->query($query);
+
+		if ($req->rowCount() > 0) {
+			$data = $req->fetchAll();
+		    
+			foreach ($data as $userID) {
+		        $users[] = get($userID["USERID"]);
+			}
+		}		
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return $users;
 }
 
 /**
@@ -198,17 +281,26 @@ function get_followers($uid) {
  * @return a list of users objects
  */
 function get_followings($uid) {
-    $list = array();
     $db = \Db::dbc();
-    $query = "SELECT DISTINCT USERID_2 FROM _FOLLOW WHERE USERID_1 = ".$uid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $rowCount = count($result);
-    if($result != FALSE && $rowCount > 0) {
-        foreach($result as $i)
-            $list[] = get($i[0]);
-    }
-    return $list;
+    $users = array();
+    $query = "SELECT DISTINCT USERID_2 AS USERID FROM _FOLLOW WHERE USERID_1 = " . $uid;
+
+	try {
+		$req = $db->query($query);
+
+		if ($req->rowCount() > 0) {
+			$data = $req->fetchAll();
+		    
+			foreach ($data as $userID) {
+		        $users[] = get($userID["USERID"]);
+			}
+		}		
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return $users;
 }
 
 /**
@@ -217,28 +309,33 @@ function get_followings($uid) {
  * @return an object which describes the stats
  */
 function get_stats($uid) {
-    $list = array();
     $db = \Db::dbc();
-    $query = "SELECT COUNT(USERID) FROM TWEET WHERE USERID = ".$uid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $nb_posts = $result[0][0];
+    $list = array();
+    $query_posts = "SELECT COUNT(USERID) FROM TWEET WHERE USERID = " . $uid;
+    $query_followers = "SELECT COUNT(USERID_2) FROM _FOLLOW WHERE USERID_1 = " . $uid;
+    $quer_following = "SELECT COUNT(USERID_1) FROM _FOLLOW WHERE USERID_2 = " . $uid;
 
-    $query = "SELECT COUNT(USERID_2) FROM _FOLLOW WHERE USERID_1 = ".$uid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $nb_followers = $result[0][0];
+	try {
+		$req = $db->query($query);
+		$nb_posts = $req->fetchAll()[0][0];
 
-    $query = "SELECT COUNT(USERID_1) FROM _FOLLOW WHERE USERID_2 = ".$uid;
-    $result = $db->query($query);
-    $result = $result->fetchAll();
-    $nb_following = $result[0][0];
+		$req = $db->query($query);
+		$nb_followers = $req->fetchAll()[0][0];
 
-    return (object) array(
-        "nb_posts" => $nb_posts,
-        "nb_followers" => $nb_followers,
-        "nb_following" => $nb_following
-    );
+		$req = $db->query($query);
+		$nb_following = $req->fetchAll()[0][0];
+
+		return (object) array(
+		    "nb_posts" => $nb_posts,
+		    "nb_followers" => $nb_followers,
+		    "nb_following" => $nb_following
+		);
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return (object) null;
 }
 
 /**
@@ -250,15 +347,27 @@ function get_stats($uid) {
  */
 function check_auth($username, $password) {
     $db = \Db::dbc();
-    $query = "SELECT USERID, USERPASSWORD FROM USER WHERE USERUSERNAME = '".$username."'";
-    $result = $db->query($query);
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        $userpassword = hash_password($password);
-        if($userpassword == $result["USERPASSWORD"])
-            return get($result["USERID"]);
+    $query = "SELECT USERID, USERPASSWORD FROM USER WHERE USERUSERNAME = :USERUSERNAME";
+
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERUSERNAME" => $username
+		));
+
+		if ($req->rowCount() > 0) {
+			$user = $req->fetchAll()[0];
+			
+			if (hash_password($password) == $user["USERPASSWORD"]) {
+				return get($user["USERID"]);
+			}
+		}
     }
-    return null;
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return null;
 }
 
 /**
@@ -269,14 +378,27 @@ function check_auth($username, $password) {
  */
 function check_auth_id($id, $password) {
     $db = \Db::dbc();
-    $query = "SELECT USERPASSWORD FROM USER WHERE USERID = ".$id;
-    $result = $db->query($query);
-    if($result != FALSE && $result->rowCount() > 0) {
-        $result = $result->fetchAll()[0];
-        if($password == $result["USERPASSWORD"])
-            return get($id);
+    $query = "SELECT USERPASSWORD FROM USER WHERE USERID = :USERID";
+
+	try {
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERID" => $id
+		));
+
+		if ($req->rowCount() > 0) {
+			$user = $req->fetchAll()[0];
+			
+			if ($password == $user["USERPASSWORD"]) {
+				return get($id);
+			}
+		}
     }
-    return null;
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
+
+	return null;
 }
 
 /**
@@ -286,11 +408,21 @@ function check_auth_id($id, $password) {
  */
 function follow($id, $id_to_follow) {
     $db = \Db::dbc();
-    date_default_timezone_set("Europe/Paris");
-    $query = "INSERT INTO _FOLLOW VALUES(".$id.",".$id_to_follow.",'".date("Y-m-d G:i:s")."',null)";
-    $result = $db->query($query);
-    if($result == FALSE)
-        echo "Echec de l'action ".$id." follow ".$id_to_follow."\n";
+    $query = "INSERT INTO _FOLLOW VALUES(:USERID_1, :USERID_2, :FOLLOWDATE, :READDATE)";
+
+	try {
+		date_default_timezone_set("Europe/Paris");
+		$req = $db->prepare($query);
+		$req->execute(array(
+			"USERID_1" => $id,
+			"USERID_2" => $id_to_follow,
+			"FOLLOWDATE" => date("Y-m-d G:i:s"),
+			"READDATE" => null
+		));
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+	}
 }
 
 /**
@@ -300,9 +432,14 @@ function follow($id, $id_to_follow) {
  */
 function unfollow($id, $id_to_unfollow) {
     $db = \Db::dbc();
-    $query = "DELETE FROM _FOLLOW WHERE USERID_1 = ".$id." AND USERID_2 = ".$id_to_unfollow;
-    $result = $db->query($query);
-    if($result != FALSE)
-        return TRUE;
-    return FALSE;
+    $query = "DELETE FROM _FOLLOW WHERE USERID_1 = " . $id . " AND USERID_2 = " . $id_to_unfollow;
+
+	try {
+		$req = $db->exec($query);
+		return true;
+	}
+	catch (PDOException $e) {
+		print $e->getMessage();
+		return false;
+	}
 }
